@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#221832">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="My Bar">
+  <title>My Bar</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="page-title">레시피</h1>
+    <button class="icon-btn" id="btn-add" aria-label="추가">＋</button>
+  </header>
+
+  <main>
+    <!-- 레시피 목록 -->
+    <section id="view-recipes" class="view active">
+      <div class="toolbar">
+        <input type="search" id="recipe-q" placeholder="레시피 검색" autocomplete="off">
+        <div class="chips" id="recipe-status-chips">
+          <button class="chip active" data-status="">전체</button>
+          <button class="chip ok" data-status="ok">완성 가능</button>
+          <button class="chip sub" data-status="sub">대체 시 가능</button>
+          <button class="chip no" data-status="no">불가</button>
+        </div>
+        <div class="chips" id="recipe-type-chips">
+          <button class="chip active" data-type="">전체</button>
+          <button class="chip" data-type="cocktail">칵테일</button>
+          <button class="chip" data-type="highball">하이볼</button>
+        </div>
+      </div>
+      <div id="recipe-list" class="list"></div>
+    </section>
+
+    <!-- 재료 목록 -->
+    <section id="view-spirits" class="view">
+      <div class="toolbar">
+        <input type="search" id="spirit-q" placeholder="재료 검색" autocomplete="off">
+        <div class="chips" id="spirit-owned-chips">
+          <button class="chip active" data-owned="">전체</button>
+          <button class="chip" data-owned="1">보유</button>
+          <button class="chip" data-owned="0">미보유</button>
+        </div>
+      </div>
+      <div id="spirit-list"></div>
+    </section>
+
+    <!-- 설정 / 백업 -->
+    <section id="view-settings" class="view">
+      <div class="card pad">
+        <h2>백업</h2>
+        <p class="muted">데이터는 이 기기 안에만 저장됩니다. 기기를 바꾸거나 앱을 지우기 전에 꼭 내보내기를 해 주세요.
+          아이폰에서는 공유 창에서 <b>"파일에 저장" → iCloud Drive</b>를 선택하면 됩니다.</p>
+        <div class="stack">
+          <button class="primary block" id="btn-export">내보내기 (백업 파일 저장)</button>
+          <button class="block" id="btn-import">가져오기 (백업 파일에서 복원)</button>
+          <input type="file" id="import-file" accept="application/json,.json" hidden>
+        </div>
+        <p class="muted small">가져오기를 하면 현재 데이터가 백업 파일 내용으로 <b>모두 교체</b>됩니다.</p>
+      </div>
+      <div class="card pad">
+        <h2>현황</h2>
+        <div id="stats" class="stats"></div>
+      </div>
+      <p class="muted small center">My Bar · 오프라인 전용 · 통신 기능 없음</p>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button class="tab active" data-tab="recipes"><span class="ti">🍸</span><span>레시피</span></button>
+    <button class="tab" data-tab="spirits"><span class="ti">🍾</span><span>재료</span></button>
+    <button class="tab" data-tab="settings"><span class="ti">⚙️</span><span>설정</span></button>
+  </nav>
+
+  <!-- 재료 등록/수정 -->
+  <dialog id="dlg-spirit" class="sheet">
+    <form id="form-spirit" method="dialog">
+      <div class="sheet-head">
+        <button type="button" class="link" data-close>취소</button>
+        <h2 id="spirit-form-title">재료 등록</h2>
+        <button type="submit" class="link strong">저장</button>
+      </div>
+      <div class="sheet-body">
+        <div class="photo-field">
+          <label class="photo-preview" id="spirit-photo-preview">
+            <input type="file" accept="image/*" id="spirit-photo" hidden>
+          </label>
+          <button type="button" class="link danger-text" id="spirit-photo-clear">사진 제거</button>
+        </div>
+        <label class="field">이름<input name="name" required placeholder="예: 탱커레이 런던 드라이 진" autocomplete="off"></label>
+        <label class="field">분류<select name="category" id="spirit-cat-input"></select></label>
+        <label class="switch-row">
+          <span>현재 보유 중</span>
+          <input type="checkbox" name="owned" class="switch">
+        </label>
+        <label class="field">메모<textarea name="memo" rows="3" placeholder="도수, 구입처, 맛 등"></textarea></label>
+        <p class="muted small" id="spirit-usage"></p>
+        <button type="button" class="block danger" id="spirit-delete">재료 삭제</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 레시피 등록/수정 -->
+  <dialog id="dlg-recipe" class="sheet">
+    <form id="form-recipe" method="dialog">
+      <div class="sheet-head">
+        <button type="button" class="link" data-close>취소</button>
+        <h2 id="recipe-form-title">레시피 등록</h2>
+        <button type="submit" class="link strong">저장</button>
+      </div>
+      <div class="sheet-body">
+        <div class="photo-field">
+          <label class="photo-preview" id="recipe-photo-preview">
+            <input type="file" accept="image/*" id="recipe-photo" hidden>
+          </label>
+          <button type="button" class="link danger-text" id="recipe-photo-clear">사진 제거</button>
+        </div>
+        <label class="field">이름<input name="name" required placeholder="예: 진토닉" autocomplete="off"></label>
+        <div class="field">종류
+          <div class="seg">
+            <label><input type="radio" name="type" value="cocktail" checked><span>칵테일</span></label>
+            <label><input type="radio" name="type" value="highball"><span>하이볼</span></label>
+          </div>
+        </div>
+        <label class="field">글라스<input name="glass" placeholder="예: 하이볼 글라스" autocomplete="off"></label>
+
+        <div class="field">재료
+          <p class="hint" id="recipe-no-spirits" hidden>먼저 <b>재료</b> 탭에서 술이나 재료를 등록해 주세요.</p>
+          <div id="ing-rows"></div>
+          <button type="button" class="block" id="btn-add-ing">＋ 재료 추가</button>
+        </div>
+
+        <label class="field">만드는 법<textarea name="steps" rows="5" placeholder="1. 글라스에 얼음을 가득 채운다&#10;2. 진을 붓는다&#10;3. 토닉워터로 채우고 가볍게 젓는다"></textarea></label>
+        <button type="button" class="block danger" id="recipe-delete">레시피 삭제</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 레시피 상세 -->
+  <dialog id="dlg-detail" class="sheet">
+    <div class="sheet-head">
+      <button type="button" class="link" data-close>닫기</button>
+      <h2 id="detail-title"></h2>
+      <button type="button" class="link strong" id="detail-edit">수정</button>
+    </div>
+    <div class="sheet-body" id="detail-body"></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
