@@ -1,6 +1,6 @@
 // 앱 파일을 캐시해서 오프라인에서도 동작하게 한다.
 // 앱 코드를 수정하면 CACHE_VERSION을 올려야 설치된 앱이 새 파일을 받는다.
-const CACHE_VERSION = 'my-bar-v3';
+const CACHE_VERSION = 'my-bar-v4';
 const APP_FILES = [
   './',
   './index.html',
@@ -13,7 +13,9 @@ const APP_FILES = [
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_VERSION).then(cache => cache.addAll(APP_FILES)));
+  // 브라우저 HTTP 캐시(GitHub Pages는 10분)를 건너뛰고 서버에서 새로 받는다.
+  const requests = APP_FILES.map(url => new Request(url, { cache: 'reload' }));
+  event.waitUntil(caches.open(CACHE_VERSION).then(cache => cache.addAll(requests)));
   self.skipWaiting();
 });
 

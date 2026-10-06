@@ -1029,6 +1029,18 @@ $('#spirit-cat-input').innerHTML = CATEGORIES.map(c => `<option>${esc(c)}</optio
   render();
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      // 홈 화면 앱은 다시 열어도 새로 로드되지 않을 때가 많아서, 화면에 돌아올 때마다 업데이트를 확인한다.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    }).catch(() => {});
+    // 새 버전이 활성화되면 다시 로드한다. 입력 중이면 데이터를 잃지 않도록 안내만 한다.
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) return;
+      if (document.querySelector('dialog[open]')) toast('새 버전이 준비됐어요. 앱을 다시 열면 적용돼요.');
+      else location.reload();
+    });
   }
 })();
