@@ -317,3 +317,41 @@ textarea { resize: vertical; }
   font-size: 14px; transition: opacity .2s, transform .2s; z-index: 100; max-width: calc(100% - 32px);
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------- 레시피 추가 방식 선택 (액션 시트) ---------- */
+dialog.action-sheet {
+  width: 100%; max-width: 480px; margin: auto auto 0;
+  padding: 0 10px calc(var(--safe-bottom) + 10px);
+  border: 0; background: transparent; color: var(--text);
+}
+dialog.action-sheet[open] { display: flex; flex-direction: column; gap: 8px; }
+@media (min-width: 700px) { dialog.action-sheet { margin: auto; } }
+.action-group { background: var(--surface); border-radius: 14px; overflow: hidden; }
+.action-group button, .action-cancel {
+  display: block; width: 100%; padding: 16px; border: 0;
+  background: var(--surface); color: var(--accent); font-size: 17px; cursor: pointer;
+}
+.action-group button + button { border-top: 1px solid var(--line); }
+.action-cancel { border-radius: 14px; font-weight: 700; }
+
+/* ---------- AI로 정리해서 등록 ---------- */
+.card a { color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+.ai-summary { margin: 0 0 12px; }
+.ai-recipe {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px; margin-bottom: 10px; background: var(--surface); border-radius: var(--radius); cursor: pointer;
+}
+.ai-recipe > input { flex: none; width: 20px; height: 20px; margin: 2px 0 0; }
+.ai-recipe.disabled { opacity: .5; }
+.ai-recipe-body { flex: 1; min-width: 0; }
+.ai-ings { margin: 8px 0 0; padding-left: 18px; font-size: 15px; }
+.ai-ings li { margin: 3px 0; }
+.ai-steps { margin-top: 8px; font-size: 13px; color: var(--muted); white-space: pre-wrap; }
+.ai-new-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+.ai-new-row + .ai-new-row { border-top: 1px solid var(--line); }
+.ai-new-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.ai-new-row select {
+  flex: none; width: 120px; padding: 7px 8px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 16px;
+}

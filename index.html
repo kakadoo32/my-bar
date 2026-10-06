@@ -67,6 +67,17 @@
         <p class="muted small">가져오기를 하면 현재 데이터가 백업 파일 내용으로 <b>모두 교체</b>됩니다.</p>
       </div>
       <div class="card pad">
+        <h2>AI 설정</h2>
+        <p class="muted">'AI로 정리해서 등록'에 쓰는 Google Gemini API 키예요. 키는 이 기기에만 저장되고 백업 파일에는 들어가지 않아요.
+          키는 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>에서 무료로 받을 수 있어요.</p>
+        <label class="field">API 키<input type="password" id="ai-key" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <label class="field">모델<input id="ai-model" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <div class="stack">
+          <button class="primary block" id="btn-ai-save">저장</button>
+        </div>
+        <p class="muted small">무료 등급에서는 보낸 텍스트가 Google 서비스 개선에 쓰일 수 있어요. AI 정리 버튼을 누를 때만 전송돼요.</p>
+      </div>
+      <div class="card pad">
         <h2>현황</h2>
         <div id="stats" class="stats"></div>
       </div>
@@ -141,6 +152,40 @@
         <button type="button" class="block danger" id="recipe-delete">레시피 삭제</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- 레시피 추가 방식 선택 -->
+  <dialog id="dlg-add-choice" class="action-sheet">
+    <div class="action-group">
+      <button type="button" data-choice="manual">✏️ 직접 입력</button>
+      <button type="button" data-choice="ai">✨ AI로 정리해서 등록</button>
+    </div>
+    <button type="button" class="action-cancel" data-close>취소</button>
+  </dialog>
+
+  <!-- AI로 정리해서 등록 -->
+  <dialog id="dlg-ai" class="sheet">
+    <div class="sheet-head">
+      <button type="button" class="link" data-close>취소</button>
+      <h2>AI로 정리해서 등록</h2>
+      <span></span>
+    </div>
+    <div class="sheet-body">
+      <div id="ai-input-step">
+        <p class="muted">메모나 레시피 텍스트를 붙여 넣으면 AI가 재료와 레시피로 정리해 줘요. 여러 개를 한 번에 넣어도 돼요.</p>
+        <p class="hint" id="ai-no-key" hidden>먼저 <b>설정 → AI 설정</b>에서 Gemini API 키를 입력해 주세요.</p>
+        <label class="field">텍스트<textarea id="ai-text" rows="12" placeholder="예: 진토닉&#10;진 45ml, 토닉워터 풀업&#10;라임 가니시"></textarea></label>
+        <button type="button" class="primary block" id="ai-run">정리하기</button>
+        <p class="muted small">입력한 텍스트와 등록된 재료 이름이 Google Gemini로 전송돼요.</p>
+      </div>
+      <div id="ai-result-step" hidden>
+        <div id="ai-result"></div>
+        <div class="stack">
+          <button type="button" class="primary block" id="ai-save">선택한 레시피 추가</button>
+          <button type="button" class="block" id="ai-back">텍스트 다시 수정</button>
+        </div>
+      </div>
+    </div>
   </dialog>
 
   <!-- 재료 선택 (검색 + 바로 등록) -->

@@ -36,6 +36,13 @@ const store = {
   getAll(name) { return this.tx([name], 'readonly', t => t.objectStore(name).getAll()); },
   put(name, obj) { return this.tx([name], 'readwrite', t => { t.objectStore(name).put(obj); }); },
   remove(name, id) { return this.tx([name], 'readwrite', t => { t.objectStore(name).delete(id); }); },
+  putMany(spirits, recipes) {
+    return this.tx(['spirits', 'recipes'], 'readwrite', t => {
+      const s = t.objectStore('spirits'), r = t.objectStore('recipes');
+      spirits.forEach(x => s.put(x));
+      recipes.forEach(x => r.put(x));
+    });
+  },
   replaceAll(spirits, recipes) {
     return this.tx(['spirits', 'recipes'], 'readwrite', t => {
       const s = t.objectStore('spirits'), r = t.objectStore('recipes');
@@ -616,6 +623,318 @@ $('#recipe-list').addEventListener('click', e => {
 });
 $('#detail-edit').addEventListener('click', () => openRecipeForm(detailId));
 
+// ---------- AI로 정리해서 등록 (Gemini) ----------
+// 통신 금지 원칙의 유일한 예외: 사용자가 '정리하기'를 누를 때만 Gemini API를 호출한다.
+// API 키는 이 기기의 localStorage에만 두고 백업 파일에는 넣지 않는다.
+const AI_DEFAULT_MODEL = 'gemini-3.8-flash';
+const AI_KEY = 'my-bar-ai-key';
+const AI_MODEL = 'my-bar-ai-model';
+const aiSettings = {
+  get(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
+  set(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch {} },
+  get key() { return this.get(AI_KEY); },
+  get model() { return this.get(AI_MODEL).replace(/^models\//, '') || AI_DEFAULT_MODEL; },
+};
+
+const AI_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    recipes: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          name: { type: 'STRING' },
+          type: { type: 'STRING', enum: ['cocktail', 'highball'] },
+          glass: { type: 'STRING' },
+          steps: { type: 'STRING' },
+          ingredients: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                name: { type: 'STRING' },
+                category: { type: 'STRING', enum: CATEGORIES },
+                amount: { type: 'STRING' },
+                optional: { type: 'BOOLEAN' },
+                alternatives: {
+                  type: 'ARRAY',
+                  items: {
+                    type: 'OBJECT',
+                    properties: { name: { type: 'STRING' }, category: { type: 'STRING', enum: CATEGORIES } },
+                    required: ['name', 'category'],
+                  },
+                },
+              },
+              required: ['name', 'category', 'amount', 'optional', 'alternatives'],
+            },
+          },
+        },
+        required: ['name', 'type', 'glass', 'steps', 'ingredients'],
+      },
+    },
+  },
+  required: ['recipes'],
+};
+
+function aiPrompt(text) {
+  const known = state.spirits.map(s => `- ${s.name} (${s.category})`).join('\n') || '(없음)';
+  return `너는 칵테일·하이볼 레시피 정리 도우미야. 아래 [텍스트]에 들어 있는 레시피를 모두 찾아 JSON으로 정리해.
+
+규칙:
+- 모든 값은 한국어로 쓴다.
+- 재료가 [등록된 재료]에 있는 것과 같으면 그 이름을 글자 그대로 쓴다. 띄어쓰기·오타·줄임말이 달라도 같은 재료면 등록된 이름을 쓴다.
+- 새 재료는 흔히 쓰는 한국어 이름으로 쓰고, category는 주어진 목록 중 가장 알맞은 것을 고른다.
+- 얼음은 재료에 넣지 않는다.
+- amount는 텍스트에 적힌 양을 그대로 쓴다(예: "45ml", "반 개 착즙", "풀업"). 없으면 빈 문자열.
+- 가니시처럼 없어도 만들 수 있는 재료는 optional을 true로 한다.
+- "또는", "대체 가능"처럼 바꿔 쓸 수 있는 재료는 alternatives에 넣는다.
+- type은 탄산수·토닉워터 등으로 채우는 롱 드링크면 "highball", 나머지는 "cocktail".
+- glass는 텍스트에 있으면 그대로, 없으면 일반적으로 쓰는 잔 이름을 쓴다.
+- steps는 "1. ..." 형식으로 줄을 바꿔 쓴다. 텍스트에 만드는 법이 없으면 일반적인 방법을 짧게 쓴다.
+- 이름이 없는 레시피는 구성에 맞는 잘 알려진 칵테일 이름을 붙인다.
+- 같은 레시피가 여러 번 나오면 하나로 합친다.
+- 텍스트에 없는 재료를 지어내지 않는다.
+
+[등록된 재료]
+${known}
+
+[텍스트]
+${text}`;
+}
+
+async function callGemini(text) {
+  const model = aiSettings.model;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 90000);
+  let res;
+  try {
+    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': aiSettings.key },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: aiPrompt(text) }] }],
+        generationConfig: { responseMimeType: 'application/json', responseSchema: AI_SCHEMA, temperature: 0.2 },
+      }),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    throw new Error(e.name === 'AbortError' ? '응답이 너무 오래 걸려요. 잠시 후 다시 시도해 주세요.' : '인터넷 연결을 확인해 주세요.');
+  } finally {
+    clearTimeout(timer);
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = body.error?.message || res.statusText;
+    if (res.status === 429) throw new Error('무료 사용 한도를 넘었어요. 잠시 후 다시 시도해 주세요.');
+    if (res.status === 404) throw new Error(`모델 이름을 확인해 주세요 (${model}).`);
+    if (/api key|api_key/i.test(msg)) throw new Error('API 키가 올바르지 않아요. 설정 → AI 설정에서 확인해 주세요.');
+    throw new Error(`AI 요청에 실패했어요 (${res.status})\n${msg}`);
+  }
+  const out = (body.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+  let data;
+  try { data = JSON.parse(out); } catch { data = null; }
+  if (!Array.isArray(data?.recipes)) throw new Error('AI 응답을 해석하지 못했어요. 다시 시도해 주세요.');
+  return data.recipes;
+}
+
+// AI 결과 → 미리보기용 초안. 등록된 재료는 이름으로 연결하고, 없는 재료는 'new:이름' 키로 모아 둔다.
+let aiDraft = null; // { recipes: [...], newSpirits: Map(key → { name, category, owned }) }
+
+function buildAiDraft(list) {
+  const newSpirits = new Map();
+  const ref = (rawName, category) => {
+    const name = String(rawName ?? '').trim();
+    if (!name) return null;
+    const hit = state.spirits.find(s => norm(s.name) === norm(name));
+    if (hit) return hit.id;
+    const key = 'new:' + norm(name);
+    if (!newSpirits.has(key)) {
+      newSpirits.set(key, { name, category: CATEGORIES.includes(category) ? category : '가니시/기타', owned: false });
+    }
+    return key;
+  };
+  const recipes = list.map(r => {
+    const ingredients = (r.ingredients || []).map(i => {
+      const spiritId = ref(i.name, i.category);
+      if (!spiritId) return null;
+      const alternatives = [...new Set((i.alternatives || []).map(a => ref(a.name, a.category)))]
+        .filter(a => a && a !== spiritId);
+      return { spiritId, amount: String(i.amount ?? '').trim(), optional: !!i.optional, alternatives };
+    }).filter(Boolean);
+    const name = String(r.name ?? '').trim() || '이름 없는 레시피';
+    const dup = state.recipes.some(x => norm(x.name) === norm(name));
+    return {
+      checked: !dup && ingredients.length > 0,
+      dup,
+      name,
+      type: r.type === 'highball' ? 'highball' : 'cocktail',
+      glass: String(r.glass ?? '').trim(),
+      steps: String(r.steps ?? '').trim(),
+      ingredients,
+    };
+  });
+  return { recipes, newSpirits };
+}
+
+const aiSpiritName = id => aiDraft.newSpirits.get(id)?.name ?? spiritById(id)?.name ?? '?';
+
+// 체크된 레시피에서 실제로 쓰는 새 재료만
+function aiUsedNewKeys() {
+  const keys = new Set();
+  aiDraft.recipes.filter(r => r.checked).forEach(r => r.ingredients.forEach(i =>
+    [i.spiritId, ...i.alternatives].forEach(id => { if (aiDraft.newSpirits.has(id)) keys.add(id); })));
+  return [...keys];
+}
+
+function renderAiResult() {
+  const { recipes, newSpirits } = aiDraft;
+  const newTag = id => (newSpirits.has(id) ? '<span class="tag">새 재료</span>' : '');
+  const recipeHTML = recipes.map((r, i) => `
+    <label class="ai-recipe${r.ingredients.length ? '' : ' disabled'}">
+      <input type="checkbox" data-ai-recipe="${i}" ${r.checked ? 'checked' : ''} ${r.ingredients.length ? '' : 'disabled'}>
+      <div class="ai-recipe-body">
+        <div class="item-title">${esc(r.name)}</div>
+        <div class="item-meta">
+          <span class="badge type">${TYPES[r.type]}</span>
+          ${r.glass ? `<span class="badge type">${esc(r.glass)}</span>` : ''}
+          ${r.dup ? '<span class="badge sub">같은 이름의 레시피 있음</span>' : ''}
+        </div>
+        <ul class="ai-ings">${r.ingredients.map(ing => `
+          <li>${esc(aiSpiritName(ing.spiritId))}${newTag(ing.spiritId)}<span class="ing-amount">${esc(ing.amount)}</span>${ing.optional ? '<span class="tag">선택</span>' : ''}
+            ${ing.alternatives.length ? `<div class="ing-note">대체: ${ing.alternatives.map(a => esc(aiSpiritName(a)) + newTag(a)).join(', ')}</div>` : ''}
+          </li>`).join('')}
+        </ul>
+        ${r.steps ? `<div class="ai-steps">${esc(r.steps)}</div>` : ''}
+      </div>
+    </label>`).join('');
+  const newKeys = aiUsedNewKeys();
+  const newHTML = newKeys.length ? `
+    <div class="section-title">새로 등록할 재료 ${newKeys.length}개 · 분류와 보유 여부를 확인해 주세요</div>
+    <div class="group">${newKeys.map(key => {
+      const n = newSpirits.get(key);
+      return `
+        <div class="ai-new-row">
+          <span class="ai-new-name">${esc(n.name)}</span>
+          <select data-ai-cat="${esc(key)}" aria-label="${esc(n.name)} 분류">${CATEGORIES.map(c =>
+            `<option${c === n.category ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
+          <label class="pick-new-owned"><input type="checkbox" data-ai-owned="${esc(key)}" ${n.owned ? 'checked' : ''}> 보유</label>
+        </div>`;
+    }).join('')}
+    </div>` : '';
+  $('#ai-result').innerHTML = `
+    <p class="muted ai-summary">레시피 ${recipes.length}개를 찾았어요. 추가할 레시피를 고르고 내용을 확인해 주세요. 등록된 재료는 자동으로 연결했어요.</p>
+    ${recipeHTML}${newHTML}`;
+  const count = recipes.filter(r => r.checked).length;
+  $('#ai-save').textContent = count ? `선택한 레시피 ${count}개 추가` : '추가할 레시피를 골라 주세요';
+  $('#ai-save').disabled = !count;
+}
+
+function showAiStep(step) {
+  $('#ai-input-step').hidden = step !== 'input';
+  $('#ai-result-step').hidden = step !== 'result';
+  $('#dlg-ai .sheet-body').scrollTop = 0;
+}
+
+function openAiForm() {
+  $('#ai-no-key').hidden = !!aiSettings.key;
+  showAiStep('input');
+  $('#dlg-ai').showModal();
+}
+
+$('#ai-run').addEventListener('click', async () => {
+  const text = $('#ai-text').value.trim();
+  if (!aiSettings.key) { $('#ai-no-key').hidden = false; return; }
+  if (!text) { $('#ai-text').focus(); return; }
+  const btn = $('#ai-run');
+  btn.disabled = true;
+  btn.textContent = 'AI가 정리하는 중…';
+  try {
+    const list = await callGemini(text);
+    if (!list.length) throw new Error('텍스트에서 레시피를 찾지 못했어요.');
+    aiDraft = buildAiDraft(list);
+    renderAiResult();
+    showAiStep('result');
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '정리하기';
+  }
+});
+
+$('#ai-back').addEventListener('click', () => showAiStep('input'));
+
+$('#ai-result').addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.aiRecipe !== undefined) {
+    aiDraft.recipes[t.dataset.aiRecipe].checked = t.checked;
+    renderAiResult();
+  } else if (t.dataset.aiCat) {
+    aiDraft.newSpirits.get(t.dataset.aiCat).category = t.value;
+  } else if (t.dataset.aiOwned) {
+    aiDraft.newSpirits.get(t.dataset.aiOwned).owned = t.checked;
+  }
+});
+
+$('#ai-save').addEventListener('click', async () => {
+  const chosen = aiDraft.recipes.filter(r => r.checked);
+  if (!chosen.length) return;
+  $('#ai-save').disabled = true;
+  const now = Date.now();
+  const idMap = new Map();
+  const spirits = aiUsedNewKeys().map(key => {
+    const n = aiDraft.newSpirits.get(key);
+    const s = { id: uid(), name: n.name, category: n.category, owned: n.owned, memo: '', photo: null, createdAt: now, updatedAt: now };
+    idMap.set(key, s.id);
+    return s;
+  });
+  const real = id => idMap.get(id) ?? id;
+  const recipes = chosen.map(r => ({
+    id: uid(),
+    name: r.name,
+    type: r.type,
+    glass: r.glass,
+    steps: r.steps,
+    photo: null,
+    ingredients: r.ingredients.map(i => ({
+      spiritId: real(i.spiritId), amount: i.amount, optional: i.optional, alternatives: i.alternatives.map(real),
+    })),
+    createdAt: now,
+    updatedAt: now,
+  }));
+  try {
+    await store.putMany(spirits, recipes);
+  } catch (e) {
+    alert('저장하지 못했어요: ' + e.message);
+    $('#ai-save').disabled = false;
+    return;
+  }
+  state.spirits.push(...spirits);
+  state.recipes.push(...recipes);
+  $('#ai-text').value = '';
+  aiDraft = null;
+  $('#dlg-ai').close();
+  render();
+  toast(`레시피 ${recipes.length}개를 추가했어요`);
+  if (recipes.length === 1) {
+    renderDetail(recipes[0].id);
+    $('#dlg-detail').showModal();
+  }
+});
+
+// 설정 → AI 설정
+$('#ai-key').value = aiSettings.key;
+$('#ai-model').value = aiSettings.model;
+$('#ai-model').placeholder = AI_DEFAULT_MODEL;
+$('#btn-ai-save').addEventListener('click', () => {
+  aiSettings.set(AI_KEY, $('#ai-key').value.trim());
+  aiSettings.set(AI_MODEL, $('#ai-model').value.trim());
+  $('#ai-key').value = aiSettings.key;
+  $('#ai-model').value = aiSettings.model;
+  toast('AI 설정을 저장했어요');
+});
+
 // ---------- 백업 ----------
 function backupFileName() {
   const d = new Date();
@@ -683,7 +1002,18 @@ $('#recipe-q').addEventListener('input', e => { state.recipeFilter.q = e.target.
 $('#spirit-q').addEventListener('input', e => { state.spiritFilter.q = e.target.value.trim(); renderSpirits(); });
 
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
-$('#btn-add').addEventListener('click', () => (state.tab === 'spirits' ? openSpiritForm() : openRecipeForm()));
+$('#btn-add').addEventListener('click', () => {
+  if (state.tab === 'spirits') openSpiritForm();
+  else $('#dlg-add-choice').showModal();
+});
+$('#dlg-add-choice').addEventListener('click', e => {
+  const dlg = e.currentTarget;
+  if (e.target === dlg) { dlg.close(); return; } // 바깥 영역을 누르면 닫기
+  const btn = e.target.closest('[data-choice]');
+  if (!btn) return;
+  dlg.close();
+  if (btn.dataset.choice === 'ai') openAiForm(); else openRecipeForm();
+});
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
 
 $('#spirit-cat-input').innerHTML = CATEGORIES.map(c => `<option>${esc(c)}</option>`).join('');
