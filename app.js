@@ -94,19 +94,6 @@ function thumbHTML(photo, fallback, cls = 'thumb') {
   return `<div class="${cls}">${photo ? `<img src="${photo}" alt="">` : fallback}</div>`;
 }
 
-function spiritOptionsHTML(selectedId, excludeIds = []) {
-  const groups = CATEGORIES.map(cat => {
-    const items = state.spirits
-      .filter(s => s.category === cat && (s.id === selectedId || !excludeIds.includes(s.id)))
-      .sort(byName);
-    if (!items.length) return '';
-    return `<optgroup label="${esc(cat)}">${items.map(s =>
-      `<option value="${s.id}"${s.id === selectedId ? ' selected' : ''}>${esc(s.name)}${s.owned ? ' ✓' : ''}</option>`
-    ).join('')}</optgroup>`;
-  });
-  return groups.join('');
-}
-
 // ---------- 탭 ----------
 function setTab(tab) {
   state.tab = tab;
@@ -354,22 +341,16 @@ function newIngRow() {
 }
 
 function renderIngRows() {
-  const hasSpirits = state.spirits.length > 0;
-  $('#recipe-no-spirits').hidden = hasSpirits;
-  $('#btn-add-ing').hidden = !hasSpirits;
   $('#ing-rows').innerHTML = ingRows.map((row, i) => {
     const altChips = row.alternatives.map(id => {
       const s = spiritById(id);
       return s ? `<span class="alt-chip">${esc(s.name)}${s.owned ? ' ✓' : ''}<button type="button" data-act="rm-alt" data-alt="${id}" aria-label="대체 재료 빼기">×</button></span>` : '';
     }).join('');
-    const altOptions = spiritOptionsHTML(null, [row.spiritId, ...row.alternatives]);
+    const main = spiritById(row.spiritId);
     return `
       <div class="ing-row" data-i="${i}">
         <div class="ing-main">
-          <select data-f="spiritId" aria-label="재료">
-            <option value="">재료 선택</option>
-            ${spiritOptionsHTML(row.spiritId)}
-          </select>
+          <button type="button" class="pick-btn${main ? '' : ' empty'}" data-act="pick-main" aria-label="재료 선택">${main ? `${esc(main.name)}${main.owned ? ' ✓' : ''}` : '재료 선택'}</button>
           <input data-f="amount" value="${esc(row.amount)}" placeholder="양 (45ml)" aria-label="양">
           <button type="button" class="ing-remove" data-act="rm-row" aria-label="재료 행 삭제">✕</button>
         </div>
@@ -377,7 +358,7 @@ function renderIngRows() {
         <div class="ing-alts">
           <span class="lbl">대체:</span>
           ${altChips}
-          ${altOptions ? `<select data-act="add-alt" aria-label="대체 재료 추가"><option value="">＋ 대체 재료 추가</option>${altOptions}</select>` : ''}
+          <button type="button" class="pick-btn alt" data-act="pick-alt">＋ 대체 재료 추가</button>
         </div>
       </div>`;
   }).join('');
@@ -395,7 +376,6 @@ function openRecipeForm(id = null) {
   form.steps.value = r?.steps ?? '';
   recipePhoto.set(r?.photo ?? null);
   ingRows = r ? r.ingredients.map(i => ({ ...i, alternatives: [...(i.alternatives || [])] })) : [newIngRow()];
-  if (!state.spirits.length) ingRows = [];
   $('#recipe-delete').hidden = !r;
   renderIngRows();
   $('#dlg-recipe').showModal();
@@ -414,27 +394,120 @@ $('#ing-rows').addEventListener('input', e => {
 $('#ing-rows').addEventListener('change', e => {
   const rowEl = e.target.closest('.ing-row');
   if (!rowEl) return;
-  const row = ingRows[rowEl.dataset.i];
-  const f = e.target.dataset.f;
-  if (f === 'spiritId') {
-    row.spiritId = e.target.value;
-    row.alternatives = row.alternatives.filter(a => a !== row.spiritId);
-    renderIngRows();
-  } else if (f === 'optional') {
-    row.optional = e.target.checked;
-  } else if (e.target.dataset.act === 'add-alt' && e.target.value) {
-    row.alternatives.push(e.target.value);
-    renderIngRows();
-  }
+  if (e.target.dataset.f === 'optional') ingRows[rowEl.dataset.i].optional = e.target.checked;
 });
 
-$('#ing-rows').addEventListener('click', e => {
+$('#ing-rows').addEventListener('click', async e => {
   const btn = e.target.closest('button[data-act]');
   if (!btn) return;
   const i = Number(btn.closest('.ing-row').dataset.i);
-  if (btn.dataset.act === 'rm-row') ingRows.splice(i, 1);
-  if (btn.dataset.act === 'rm-alt') ingRows[i].alternatives = ingRows[i].alternatives.filter(a => a !== btn.dataset.alt);
+  const row = ingRows[i];
+  const act = btn.dataset.act;
+  if (act === 'rm-row') ingRows.splice(i, 1);
+  else if (act === 'rm-alt') row.alternatives = row.alternatives.filter(a => a !== btn.dataset.alt);
+  else if (act === 'pick-main') {
+    const id = await pickSpirit({ title: '재료 선택', selectedId: row.spiritId });
+    if (!id) return;
+    row.spiritId = id;
+    row.alternatives = row.alternatives.filter(a => a !== id);
+  } else if (act === 'pick-alt') {
+    const id = await pickSpirit({ title: '대체 재료 선택', excludeIds: [row.spiritId, ...row.alternatives] });
+    if (!id) return;
+    row.alternatives.push(id);
+  }
   renderIngRows();
+});
+
+// ---------- 재료 선택 시트 (검색 + 바로 등록) ----------
+// 검색은 띄어쓰기·대소문자를 무시하고 이름이나 분류에 포함되면 보여 준다.
+const norm = s => String(s ?? '').toLowerCase().replace(/\s+/g, '');
+let pick = null; // { selectedId, excludeIds, resolve, creating }
+let pickNewCat = CATEGORIES[0];
+let pickNewOwned = false;
+
+function pickSpirit({ title, selectedId = '', excludeIds = [] }) {
+  return new Promise(resolve => {
+    pick = { selectedId, excludeIds, resolve, creating: false };
+    $('#pick-title').textContent = title;
+    $('#pick-q').value = '';
+    renderPickList();
+    $('#dlg-pick').showModal();
+    $('#pick-list').scrollTop = 0;
+    $('#pick-q').focus();
+  });
+}
+
+function finishPick(id) {
+  const p = pick;
+  pick = null;
+  $('#dlg-pick').close();
+  p?.resolve(id);
+}
+
+function renderPickList() {
+  const raw = $('#pick-q').value.trim();
+  const q = norm(raw);
+  const items = state.spirits.filter(s => !pick.excludeIds.includes(s.id) &&
+    (!q || norm(s.name).includes(q) || norm(s.category).includes(q)));
+  const groups = CATEGORIES.map(cat => {
+    const list = items.filter(s => s.category === cat).sort(byName);
+    if (!list.length) return '';
+    return `
+      <div class="group-title">${esc(cat)}</div>
+      <div class="group">${list.map(s => `
+        <button type="button" class="pick-item${s.id === pick.selectedId ? ' selected' : ''}" data-id="${s.id}">
+          <span class="item-title">${esc(s.name)}</span>${s.owned ? '<span class="badge ok">보유</span>' : ''}
+        </button>`).join('')}
+      </div>`;
+  }).join('');
+  const canCreate = raw && !state.spirits.some(s => norm(s.name) === q);
+  const createHTML = canCreate ? `
+    <div class="pick-new">
+      <div class="pick-new-title">‘${esc(raw)}’ 새 재료로 등록</div>
+      <div class="pick-new-row">
+        <select id="pick-new-cat" aria-label="분류">${CATEGORIES.map(c =>
+          `<option${c === pickNewCat ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
+        <label class="pick-new-owned"><input type="checkbox" id="pick-new-owned"${pickNewOwned ? ' checked' : ''}> 보유 중</label>
+      </div>
+      <button type="button" class="primary block" id="pick-create">등록하고 선택</button>
+    </div>` : '';
+  let emptyHTML = '';
+  if (!items.length && !canCreate) {
+    emptyHTML = `<div class="empty">${state.spirits.length ? '선택할 수 있는 재료가 없어요.' : '등록된 재료가 없어요.'}<br>위에 이름을 입력하면 바로 등록할 수 있어요.</div>`;
+  }
+  $('#pick-list').innerHTML = groups + createHTML + emptyHTML;
+}
+
+async function createSpiritFromPick() {
+  const name = $('#pick-q').value.trim();
+  if (!name || !pick || pick.creating) return;
+  pick.creating = true;
+  const now = Date.now();
+  const spirit = { id: uid(), name, category: pickNewCat, owned: pickNewOwned, memo: '', photo: null, createdAt: now, updatedAt: now };
+  await store.put('spirits', spirit);
+  state.spirits.push(spirit);
+  toast('재료를 등록했어요');
+  finishPick(spirit.id);
+}
+
+$('#dlg-pick').addEventListener('close', () => { if (pick) finishPick(null); });
+$('#pick-q').addEventListener('input', renderPickList);
+$('#pick-q').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.isComposing) return;
+  e.preventDefault();
+  // 결과가 하나면 그걸 선택, 결과가 없으면 새 재료로 등록
+  const items = $('#pick-list').querySelectorAll('.pick-item');
+  if (items.length === 1) finishPick(items[0].dataset.id);
+  else if (!items.length && $('#pick-create')) createSpiritFromPick();
+});
+$('#pick-list').addEventListener('click', e => {
+  const item = e.target.closest('.pick-item');
+  if (item) finishPick(item.dataset.id);
+  else if (e.target.closest('#pick-create')) createSpiritFromPick();
+});
+$('#pick-list').addEventListener('change', e => {
+  if (e.target.id === 'pick-new-cat') pickNewCat = e.target.value;
+  if (e.target.id === 'pick-new-owned') pickNewOwned = e.target.checked;
 });
 
 $('#form-recipe').addEventListener('submit', async e => {

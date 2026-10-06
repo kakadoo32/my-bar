@@ -239,9 +239,12 @@ textarea { resize: vertical; }
 /* 레시피 폼의 재료 행 */
 .ing-row { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin-bottom: 8px; }
 .ing-main { display: grid; grid-template-columns: 1fr 96px 36px; gap: 6px; }
-.ing-main select, .ing-main input, .ing-alts select {
+.ing-main input, .pick-btn {
   width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 16px; min-width: 0;
 }
+.pick-btn { text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-btn.empty { color: var(--muted); }
+.pick-btn.alt { width: auto; flex: 1 1 160px; color: var(--accent); }
 .ing-remove { border: 0; background: var(--no-bg); color: var(--no); border-radius: 8px; cursor: pointer; font-size: 16px; }
 .ing-opts { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; color: var(--muted); }
 .ing-opts input { width: 18px; height: 18px; }
@@ -249,7 +252,29 @@ textarea { resize: vertical; }
 .ing-alts .lbl { font-size: 13px; color: var(--muted); }
 .alt-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 4px 4px 10px; border-radius: 999px; background: var(--surface-2); font-size: 14px; color: var(--text); }
 .alt-chip button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 16px; padding: 0 6px; }
-.ing-alts select { flex: 1 1 160px; font-size: 16px; color: var(--accent); }
+
+/* 재료 선택 시트 */
+@media (min-width: 700px) { #dlg-pick { height: 80vh; } }
+.pick-search { flex: none; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.pick-search input[type="search"] { background: var(--bg); }
+#pick-list { min-height: 0; }
+#pick-list .group-title:first-child { margin-top: 0; }
+.pick-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 13px 14px; border: 0; background: none; text-align: left; cursor: pointer;
+}
+.pick-item + .pick-item { border-top: 1px solid var(--line); }
+.pick-item .item-title { flex: 1; min-width: 0; font-size: 16px; font-weight: 500; }
+.pick-item.selected { color: var(--accent); }
+.pick-item.selected .item-title { font-weight: 700; }
+.pick-item.selected::after { content: "✓"; font-weight: 800; }
+.pick-new { margin-top: 18px; padding: 14px; background: var(--surface); border: 1px dashed var(--accent); border-radius: var(--radius); }
+.pick-new:first-child { margin-top: 0; }
+.pick-new-title { font-weight: 700; margin-bottom: 10px; overflow-wrap: anywhere; }
+.pick-new-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.pick-new-row select { flex: 1; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 16px; }
+.pick-new-owned { display: flex; align-items: center; gap: 6px; font-size: 15px; white-space: nowrap; }
+.pick-new-owned input { width: 18px; height: 18px; }
 
 /* ---------- 상세 ---------- */
 .detail-photo { width: 100%; aspect-ratio: 4 / 3; border-radius: var(--radius); overflow: hidden; background: var(--surface-2); display: grid; place-items: center; font-size: 72px; margin-bottom: 14px; }

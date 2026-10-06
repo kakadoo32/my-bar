@@ -1,6 +1,6 @@
 // 앱 파일을 캐시해서 오프라인에서도 동작하게 한다.
 // 앱 코드를 수정하면 CACHE_VERSION을 올려야 설치된 앱이 새 파일을 받는다.
-const CACHE_VERSION = 'my-bar-v1';
+const CACHE_VERSION = 'my-bar-v2';
 const APP_FILES = [
   './',
   './index.html',

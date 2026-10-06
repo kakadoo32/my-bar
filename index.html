@@ -133,7 +133,6 @@
         <label class="field">글라스<input name="glass" placeholder="예: 하이볼 글라스" autocomplete="off"></label>
 
         <div class="field">재료
-          <p class="hint" id="recipe-no-spirits" hidden>먼저 <b>재료</b> 탭에서 술이나 재료를 등록해 주세요.</p>
           <div id="ing-rows"></div>
           <button type="button" class="block" id="btn-add-ing">＋ 재료 추가</button>
         </div>
@@ -142,6 +141,19 @@
         <button type="button" class="block danger" id="recipe-delete">레시피 삭제</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- 재료 선택 (검색 + 바로 등록) -->
+  <dialog id="dlg-pick" class="sheet">
+    <div class="sheet-head">
+      <button type="button" class="link" data-close>닫기</button>
+      <h2 id="pick-title">재료 선택</h2>
+      <span></span>
+    </div>
+    <div class="pick-search">
+      <input type="search" id="pick-q" placeholder="이름 또는 분류로 검색" autocomplete="off" enterkeyhint="search">
+    </div>
+    <div class="sheet-body" id="pick-list"></div>
   </dialog>
 
   <!-- 레시피 상세 -->
